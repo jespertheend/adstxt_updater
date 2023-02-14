@@ -1,0 +1,4 @@
+destination: dev/ads2.txt
+sources:
+  - https://poki.com/ads.txt
+  - https://adinplay.com/ads.txt
