@@ -79,6 +79,7 @@ export class AdsTxtUpdater {
 	async #watchConfig() {
 		for await (const e of Deno.watchFs(this.#absoluteConfigPath)) {
 			if (e.kind != "access") {
+				this.#logger.info("Configuration changed, reloading...");
 				this.#loadInstance.run();
 			}
 		}
