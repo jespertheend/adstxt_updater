@@ -8,7 +8,9 @@
 		// run the tests
 		"test": "deno test --no-check=remote",
 		// performs all tasks that are generally required for ci to pass
-		"check": "deno fmt && deno lint && deno task test"
+		"check": "deno fmt && deno lint && deno task test",
+		// Builds binaries and places them in /dist
+		"build": "deno run --allow-run --allow-read --allow-write scripts/build.js"
 	},
 	"fmt": {
 		"files": {

@@ -11,10 +11,10 @@
 	},
 	"include": [
 		"src/**/*.js",
-		"test"
+		"test",
+		"scripts"
 	],
 	"files": [
-		"src/main.js",
-		"scripts/dev.js"
+		"src/main.js"
 	]
 }
