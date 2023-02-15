@@ -97,3 +97,63 @@ Deno.test({
 		}
 	},
 });
+
+Deno.test({
+	name: "Rejected fetch call",
+	async fn() {
+		const fetchSpy = stub(
+			globalThis,
+			"fetch",
+			returnsNext([
+				Promise.reject(
+					new TypeError("A network error occurred"),
+				),
+			]),
+		);
+
+		try {
+			const cache = new AdsTxtCache();
+			await assertRejects(async () => {
+				await cache.fetchAdsTxt("https://example.com/ads.txt", 60_000);
+			});
+		} finally {
+			fetchSpy.restore();
+		}
+	},
+});
+
+Deno.test({
+	name: "Network error after a successfull call",
+	async fn() {
+		const time = new FakeTime();
+		const fetchSpy = stub(
+			globalThis,
+			"fetch",
+			returnsNext([
+				Promise.resolve(new Response("content1")),
+				Promise.reject(
+					new TypeError("A network error occurred"),
+				),
+			]),
+		);
+
+		try {
+			const cache = new AdsTxtCache();
+			const result1 = await cache.fetchAdsTxt("https://example.com/ads.txt", 60_000);
+			assertEquals(result1, {
+				fresh: true,
+				content: "content1",
+			});
+
+			time.tick(90_000);
+			const result2 = await cache.fetchAdsTxt("https://example.com/ads.txt", 60_000);
+			assertEquals(result2, {
+				fresh: false,
+				content: "content1",
+			});
+		} finally {
+			fetchSpy.restore();
+			time.restore();
+		}
+	},
+});

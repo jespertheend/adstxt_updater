@@ -20,8 +20,17 @@ export class AdsTxtCache {
 		let fresh = existing && Date.now() - existing.fetchTime < cacheDurationSeconds;
 		if (!fresh) {
 			const fetchTime = Date.now();
-			const response = await fetch(url);
-			if (response.ok) {
+			let response;
+			try {
+				response = await fetch(url);
+			} catch (e) {
+				if (e instanceof TypeError) {
+					// If a network error occurs we don't want to throw and just return a cached value instead.
+				} else {
+					throw e;
+				}
+			}
+			if (response && response.ok) {
 				const content = await response.text();
 				existing = {
 					fetchTime,
