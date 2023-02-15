@@ -1,6 +1,7 @@
 import * as path from "$std/path/mod.ts";
 import * as fs from "$std/fs/mod.ts";
 import * as yaml from "$std/encoding/yaml.ts";
+import { handlers, Logger } from "$std/log/mod.ts";
 import { SingleInstancePromise } from "./SingleInstancePromise.js";
 
 /**
@@ -25,6 +26,13 @@ export class AdsTxtUpdater {
 	#updateAdsTxtInstance;
 	/** @type {Deno.FsWatcher?} */
 	#destinationWatcher = null;
+	#logger = new Logger("AdsTxtUpdager", "INFO", {
+		handlers: [
+			new handlers.ConsoleHandler("INFO", {
+				formatter: "{msg}",
+			}),
+		],
+	});
 
 	/**
 	 * @param {string} absoluteConfigPath
@@ -45,6 +53,7 @@ export class AdsTxtUpdater {
 				path.dirname(this.#absoluteConfigPath),
 				this.#loadedConfig.destination,
 			);
+			this.#logger.info(`Loaded configuration at ${this.#absoluteConfigPath}`);
 			this.#updateAdsTxtInstance.run();
 			// this.#reloadDestinationWatcher();
 		});
@@ -54,9 +63,11 @@ export class AdsTxtUpdater {
 			if (!this.#absoluteDestinationPath) {
 				throw new Error("Assertion failed, no absoluteDestinationPath has been set");
 			}
+			this.#logger.info(`Fetching required content for ${this.#absoluteDestinationPath}`);
 			const content = await this.#getAdsTxtsContent();
 			await fs.ensureFile(this.#absoluteDestinationPath);
 			await Deno.writeTextFile(this.#absoluteDestinationPath, content);
+			this.#logger.info(`Updated ${this.#absoluteDestinationPath}`);
 		});
 
 		this.#watchConfig();
