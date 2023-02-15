@@ -1,15 +1,18 @@
 import * as path from "$std/path/mod.ts";
-import { ConfigWatcher } from "./ConfigWatcher.js";
+import { AdsTxtCache } from "./AdsTxtCache.js";
+import { AdsTxtUpdater } from "./AdsTxtUpdater.js";
 
 /**
  * @param {string[]} paths
  */
 export function run(paths) {
-	/** @type {ConfigWatcher[]} */
+	const cache = new AdsTxtCache();
+
+	/** @type {AdsTxtUpdater[]} */
 	const configLoaders = [];
 	for (const arg of paths) {
 		const configPath = path.resolve(arg);
-		const loader = new ConfigWatcher(configPath);
+		const loader = new AdsTxtUpdater(configPath, cache);
 		configLoaders.push(loader);
 	}
 }

@@ -5,8 +5,10 @@
 	"tasks": {
 		// Runs the application in development mode, allowing you to quickly make changes and try them out.
 		"dev": "deno run --unstable -A scripts/dev.js",
+		// run the tests
+		"test": "deno test --no-check=remote",
 		// performs all tasks that are generally required for ci to pass
-		"check": "deno fmt && deno lint"
+		"check": "deno fmt && deno lint && deno task test"
 	},
 	"fmt": {
 		"files": {
@@ -19,6 +21,13 @@
 			"useTabs": true,
 			"lineWidth": 120,
 			"proseWrap": "preserve"
+		}
+	},
+	"lint": {
+		"files": {
+			"exclude": [
+				".denoTypes"
+			]
 		}
 	},
 	"importMap": "importmap.json"

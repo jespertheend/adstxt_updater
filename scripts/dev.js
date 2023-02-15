@@ -10,6 +10,7 @@ generateTypes({
 	include: [
 		"scripts",
 		"src",
+		"test",
 	],
 	logLevel: "WARNING",
 });

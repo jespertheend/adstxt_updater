@@ -1,4 +1,4 @@
-destination: dev/ads1.txt
+destination: ./ads1.txt
 sources:
-  - https://poki.com/ads.txt
-  - https://adinplay.com/ads.txt
+  - https://poki.com/ads.all.txt
+  - https://httpstat.us/404

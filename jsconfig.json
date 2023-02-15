@@ -10,7 +10,8 @@
 		"typeRoots": [".denoTypes/@types"]
 	},
 	"include": [
-		"src/**/*.js"
+		"src/**/*.js",
+		"test"
 	],
 	"files": [
 		"src/main.js",
