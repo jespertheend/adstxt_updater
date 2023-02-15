@@ -18,5 +18,12 @@ export function run(paths) {
 }
 
 if (import.meta.main) {
-	run(Deno.args);
+	if (Deno.args.length == 0) {
+		console.log(
+			"No configuration files have been provided, provide one or more paths to configuration files via the arguments.",
+		);
+		Deno.exit();
+	} else {
+		run(Deno.args);
+	}
 }
