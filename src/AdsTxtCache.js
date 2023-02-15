@@ -1,4 +1,10 @@
 /**
+ * @typedef FetchAdsTxtResult
+ * @property {boolean} fresh
+ * @property {string} content
+ */
+
+/**
  * Caches previously fetched ads.txt urls and allows you to fetch ads.txts with a set cache duration.
  * If the request fails, or the cache is still fresh enough, an old cached value will be returned.
  */
@@ -14,10 +20,11 @@ export class AdsTxtCache {
 	/**
 	 * @param {string} url The url to fetch from.
 	 * @param {number} cacheDurationMs Duration in milliseconds for which no new requests will be made.
+	 * @returns {Promise<FetchAdsTxtResult>}
 	 */
 	async fetchAdsTxt(url, cacheDurationMs = 60 * 60 * 1000) {
 		let existing = this.#cachedAdsTxts.get(url);
-		let fresh = existing && Date.now() - existing.fetchTime < cacheDurationMs;
+		let fresh = (existing || false) && Date.now() - existing.fetchTime < cacheDurationMs;
 		if (!fresh) {
 			const fetchTime = Date.now();
 			let response;

@@ -4,6 +4,11 @@ import * as yaml from "$std/encoding/yaml.ts";
 import { handlers, Logger } from "$std/log/mod.ts";
 import { SingleInstancePromise } from "./SingleInstancePromise.js";
 
+let ensureFile = fs.ensureFile;
+export function mockEnsureFile() {
+	ensureFile = async () => {};
+}
+
 /**
  * @typedef AdsTxtConfig
  * @property {string} destination
@@ -22,10 +27,12 @@ export class AdsTxtUpdater {
 	#loadedConfig;
 	/** @type {string?} */
 	#absoluteDestinationPath = null;
-	#loadInstance;
+	#loadConfigInstance;
 	#updateAdsTxtInstance;
 	/** @type {Deno.FsWatcher?} */
 	#destinationWatcher = null;
+	/** @type {Deno.FsWatcher?} */
+	#configWatcher = null;
 	#logger = new Logger("AdsTxtUpdager", "INFO", {
 		handlers: [
 			new handlers.ConsoleHandler("INFO", {
@@ -33,6 +40,7 @@ export class AdsTxtUpdater {
 			}),
 		],
 	});
+	#destructed = false;
 
 	/**
 	 * @param {string} absoluteConfigPath
@@ -43,7 +51,8 @@ export class AdsTxtUpdater {
 		this.#adsTxtCache = adsTxtCache;
 		this.#loadedConfig = null;
 
-		this.#loadInstance = new SingleInstancePromise(async () => {
+		this.#loadConfigInstance = new SingleInstancePromise(async () => {
+			if (this.#destructed) return;
 			const content = await Deno.readTextFile(this.#absoluteConfigPath);
 			const parsed = yaml.parse(content, {
 				filename: this.#absoluteConfigPath,
@@ -57,15 +66,16 @@ export class AdsTxtUpdater {
 			this.#updateAdsTxtInstance.run();
 			// this.#reloadDestinationWatcher();
 		});
-		this.#loadInstance.run();
+		this.#loadConfigInstance.run();
 
 		this.#updateAdsTxtInstance = new SingleInstancePromise(async () => {
+			if (this.#destructed) return;
 			if (!this.#absoluteDestinationPath) {
 				throw new Error("Assertion failed, no absoluteDestinationPath has been set");
 			}
 			this.#logger.info(`Fetching required content for ${this.#absoluteDestinationPath}`);
 			const content = await this.#getAdsTxtsContent();
-			await fs.ensureFile(this.#absoluteDestinationPath);
+			await ensureFile(this.#absoluteDestinationPath);
 			await Deno.writeTextFile(this.#absoluteDestinationPath, content);
 			this.#logger.info(`Updated ${this.#absoluteDestinationPath}`);
 		});
@@ -74,13 +84,39 @@ export class AdsTxtUpdater {
 	}
 
 	/**
+	 * Waits for existing promises to resolve and then cleans up any created watchers.
+	 */
+	async destructor() {
+		if (this.#destructed) {
+			throw new Error("Updater is already destructed");
+		}
+		this.#destructed = true;
+
+		await this.waitForPromises();
+
+		this.#configWatcher?.close();
+		this.#destinationWatcher?.close();
+	}
+
+	/**
+	 * Mostly meant for tests, allows you to wait for all pending promises that are related to this updater to be resolved.
+	 */
+	waitForPromises() {
+		return Promise.all([
+			this.#loadConfigInstance.waitForFinishIfRunning(),
+			this.#updateAdsTxtInstance.waitForFinishIfRunning(),
+		]);
+	}
+
+	/**
 	 * Watch the config file for changes
 	 */
 	async #watchConfig() {
-		for await (const e of Deno.watchFs(this.#absoluteConfigPath)) {
+		this.#configWatcher = Deno.watchFs(this.#absoluteConfigPath);
+		for await (const e of this.#configWatcher) {
 			if (e.kind != "access") {
 				this.#logger.info("Configuration changed, reloading...");
-				this.#loadInstance.run();
+				this.#loadConfigInstance.run();
 			}
 		}
 	}
@@ -168,7 +204,7 @@ export class AdsTxtUpdater {
 
 		if (failedButCachedUrls.length > 0) {
 			content += "# Warning: The following urls failed, but were cached and are still included:\n";
-			for (const url of failedUrls) {
+			for (const url of failedButCachedUrls) {
 				content += `# - ${url}`;
 			}
 			content += "\n\n";
