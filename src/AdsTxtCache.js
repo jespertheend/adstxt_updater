@@ -13,11 +13,11 @@ export class AdsTxtCache {
 
 	/**
 	 * @param {string} url The url to fetch from.
-	 * @param {number} cacheDurationSeconds Duration in seconds for which no new requests will be made.
+	 * @param {number} cacheDurationMs Duration in milliseconds for which no new requests will be made.
 	 */
-	async fetchAdsTxt(url, cacheDurationSeconds = 60 * 60 * 1000) {
+	async fetchAdsTxt(url, cacheDurationMs = 60 * 60 * 1000) {
 		let existing = this.#cachedAdsTxts.get(url);
-		let fresh = existing && Date.now() - existing.fetchTime < cacheDurationSeconds;
+		let fresh = existing && Date.now() - existing.fetchTime < cacheDurationMs;
 		if (!fresh) {
 			const fetchTime = Date.now();
 			let response;
