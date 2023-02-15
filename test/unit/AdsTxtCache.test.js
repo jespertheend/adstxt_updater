@@ -1,7 +1,7 @@
 import { assertSpyCall, assertSpyCalls, returnsNext, stub } from "$std/testing/mock.ts";
 import { FakeTime } from "$std/testing/time.ts";
 import { assertEquals, assertRejects } from "$std/testing/asserts.ts";
-import { AdsTxtCache } from "../src/AdsTxtCache.js";
+import { AdsTxtCache } from "../../src/AdsTxtCache.js";
 
 Deno.test({
 	name: "Properly caches content",
