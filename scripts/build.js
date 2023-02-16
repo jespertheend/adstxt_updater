@@ -1,7 +1,7 @@
 import * as path from "$std/path/mod.ts";
 import * as fs from "$std/fs/mod.ts";
 import { setCwd } from "https://deno.land/x/chdir_anywhere@v0.0.2/mod.js";
-import {Tar} from "$std/archive/tar.ts";
+import { Tar } from "$std/archive/tar.ts";
 import * as streams from "$std/streams/mod.ts";
 setCwd(import.meta.url);
 Deno.chdir("..");
@@ -44,14 +44,14 @@ if (Deno.args.includes("--compress")) {
 				});
 			}
 		}
-		collectedTars.push({target, tar});
+		collectedTars.push({ target, tar });
 	}
 
-	for (const {target, tar} of collectedTars) {
+	for (const { target, tar } of collectedTars) {
 		const tarDestination = path.resolve(outDir, "adstxt_updater_" + target + ".tar");
-		const writer = await Deno.open(tarDestination, {write: true, create: true});
+		const writer = await Deno.open(tarDestination, { write: true, create: true });
 		await streams.copy(tar.getReader(), writer);
 		writer.close();
-		await Deno.remove(path.resolve(outDir, target), {recursive: true});
+		await Deno.remove(path.resolve(outDir, target), { recursive: true });
 	}
 }
