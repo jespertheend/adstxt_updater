@@ -1,5 +1,8 @@
 name: release
 
+permissions:
+  contents: write # For creating releases.
+
 on:
   workflow_dispatch:
     inputs:
