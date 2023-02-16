@@ -12,10 +12,10 @@ jobs:
 
     steps:
       - name: Setup repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@3.3.0
 
       - name: Setup Deno
-        uses: denoland/setup-deno@v1.1.0
+        uses: denoland/setup-deno@1.1.1
         with:
           deno-version: v1.30.3
 
@@ -32,7 +32,7 @@ jobs:
         run: deno task build --all
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v3.1.2
         with:
           name: build
           path: dist/
