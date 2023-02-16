@@ -1,19 +1,7 @@
-import * as path from "$std/path/mod.ts";
-import * as fs from "$std/fs/mod.ts";
 import * as yaml from "$std/encoding/yaml.ts";
-import { handlers, Logger } from "$std/log/mod.ts";
 import { SingleInstancePromise } from "./SingleInstancePromise.js";
-
-let ensureFile = fs.ensureFile;
-export function mockEnsureFile() {
-	ensureFile = async () => {};
-}
-
-/**
- * @typedef AdsTxtConfig
- * @property {string} destination
- * @property {string[]} sources
- */
+import { AdsTxtUpdater } from "./AdsTxtUpdater.js";
+import { logger } from "./logger.js";
 
 /**
  * An AdsTxtUpdater is responsible for updating exactly one ads.txt using exactly one configuration file.
@@ -22,26 +10,13 @@ export function mockEnsureFile() {
  */
 export class ConfigWatcher {
 	#absoluteConfigPath;
-	#adsTxtCache;
-	/** @type {AdsTxtConfig?} */
-	#loadedConfig;
-	/** @type {string?} */
-	#absoluteDestinationPath = null;
-	/** @type {string?} */
-	#absoluteWatchDestinationPath = null;
 	#loadConfigInstance;
-	#updateAdsTxtInstance;
-	/** @type {Deno.FsWatcher?} */
-	#destinationWatcher = null;
 	/** @type {Deno.FsWatcher?} */
 	#configWatcher = null;
-	#logger = new Logger("AdsTxtUpdager", "INFO", {
-		handlers: [
-			new handlers.ConsoleHandler("INFO", {
-				formatter: "{msg}",
-			}),
-		],
-	});
+	/** @type {Set<AdsTxtUpdater>} */
+	#updaters = new Set();
+	/** @type {Set<Promise<void>>} */
+	#destructedUpdaterPromises = new Set();
 	#destructed = false;
 
 	/**
@@ -50,8 +25,6 @@ export class ConfigWatcher {
 	 */
 	constructor(absoluteConfigPath, adsTxtCache) {
 		this.#absoluteConfigPath = absoluteConfigPath;
-		this.#adsTxtCache = adsTxtCache;
-		this.#loadedConfig = null;
 
 		this.#loadConfigInstance = new SingleInstancePromise(async () => {
 			if (this.#destructed) return;
@@ -59,49 +32,20 @@ export class ConfigWatcher {
 			const parsed = yaml.parse(content, {
 				filename: this.#absoluteConfigPath,
 			});
-			this.#loadedConfig = /** @type {AdsTxtConfig} */ (parsed);
 
-			this.#absoluteDestinationPath = path.resolve(
-				path.dirname(this.#absoluteConfigPath),
-				this.#loadedConfig.destination,
-			);
+			for (const updater of this.#updaters) {
+				const promise = updater.destructor();
+				this.#destructedUpdaterPromises.add(promise);
+			}
+			this.#updaters.clear();
 
-			// We watch the parent directory, rather than the destination file itself.
-			// This gives us two advantages:
-			// - The path is less likely to not exist, meaning we can start watching right away
-			// - This allows the user to delete the parent directory without losing the ads.txt
-			//   Since the ads.txt is in the root of a site, this essentially allows the user to
-			//   delete and reupload the entire site at once.
-			this.#absoluteWatchDestinationPath = path.dirname(this.#absoluteDestinationPath);
+			const config = /** @type {import("./AdsTxtUpdater.js").AdsTxtConfig} */ (parsed);
+			const updater = new AdsTxtUpdater(this.#absoluteConfigPath, config, adsTxtCache);
+			this.#updaters.add(updater);
 
-			this.#logger.info(`Loaded configuration at ${this.#absoluteConfigPath}`);
-			this.#updateAdsTxtInstance.run();
-			this.#reloadDestinationWatcher();
+			logger.info(`Loaded configuration at ${this.#absoluteConfigPath}`);
 		});
 		this.#loadConfigInstance.run();
-
-		this.#updateAdsTxtInstance = new SingleInstancePromise(async () => {
-			if (this.#destructed) return;
-			if (!this.#absoluteDestinationPath) {
-				throw new Error("Assertion failed, no absoluteDestinationPath has been set");
-			}
-			this.#logger.info(`Fetching required content for ${this.#absoluteDestinationPath}`);
-			const desiredContent = await this.#getAdsTxtsContent();
-			let currentContent = null;
-			try {
-				currentContent = await Deno.readTextFile(this.#absoluteDestinationPath);
-			} catch (e) {
-				if (!(e instanceof Deno.errors.NotFound)) {
-					throw e;
-				}
-			}
-			if (currentContent != desiredContent) {
-				await ensureFile(this.#absoluteDestinationPath);
-				await Deno.writeTextFile(this.#absoluteDestinationPath, desiredContent);
-				this.#logger.info(`Updated ${this.#absoluteDestinationPath}`);
-				this.#reloadDestinationWatcher(true);
-			}
-		});
 
 		this.#watchConfig();
 	}
@@ -118,17 +62,20 @@ export class ConfigWatcher {
 		await this.waitForPromises();
 
 		this.#configWatcher?.close();
-		this.#destinationWatcher?.close();
 	}
 
 	/**
 	 * Mostly meant for tests, allows you to wait for all pending promises that are related to this updater to be resolved.
 	 */
 	waitForPromises() {
-		return Promise.all([
-			this.#loadConfigInstance.waitForFinishIfRunning(),
-			this.#updateAdsTxtInstance.waitForFinishIfRunning(),
-		]);
+		/** @type {Promise<void>[]} */
+		const promises = [];
+		promises.push(this.#loadConfigInstance.waitForFinishIfRunning());
+		for (const updater of this.#updaters) {
+			promises.push(updater.waitForPromises());
+		}
+		promises.push(...this.#destructedUpdaterPromises);
+		return Promise.all(promises);
 	}
 
 	/**
@@ -138,112 +85,9 @@ export class ConfigWatcher {
 		this.#configWatcher = Deno.watchFs(this.#absoluteConfigPath);
 		for await (const e of this.#configWatcher) {
 			if (e.kind != "access") {
-				this.#logger.info("Configuration changed, reloading...");
+				logger.info("Configuration changed, reloading...");
 				this.#loadConfigInstance.run();
 			}
 		}
-	}
-
-	/**
-	 * @param {boolean} onlyWhenNotSet When true, only updates the watcher when no watcher exists yet.
-	 */
-	async #reloadDestinationWatcher(onlyWhenNotSet = false) {
-		if (!this.#absoluteWatchDestinationPath || !this.#absoluteDestinationPath) {
-			throw new Error("Assertion failed, no absoluteDestinationPath has been set");
-		}
-		if (onlyWhenNotSet && this.#destinationWatcher) return;
-		if (this.#destinationWatcher) {
-			this.#destinationWatcher.close();
-			this.#destinationWatcher = null;
-		}
-		try {
-			this.#destinationWatcher = Deno.watchFs(this.#absoluteWatchDestinationPath);
-		} catch (e) {
-			if (e instanceof Deno.errors.NotFound) {
-				// We'll retry once we have added the file ourselves
-			} else {
-				throw e;
-			}
-		}
-		if (this.#destinationWatcher) {
-			for await (const e of this.#destinationWatcher) {
-				if (e.kind != "access" && e.paths.includes(this.#absoluteDestinationPath)) {
-					this.#updateAdsTxtInstance.run();
-				}
-			}
-		}
-	}
-
-	/**
-	 * Fetches all sources and returns the generated string for the ads.txt.
-	 * The string includes errors and warnings for failed requests.
-	 */
-	async #getAdsTxtsContent() {
-		if (!this.#loadedConfig) {
-			throw new Error("Assertion failed, no config is currently loaded");
-		}
-		if (this.#loadedConfig.sources.length == 0) {
-			return "# Warning: The configuration file contains no sources urls.\n";
-		}
-
-		const promises = [];
-		for (const url of this.#loadedConfig.sources) {
-			const promise = (async () => {
-				let result;
-				let error;
-				try {
-					result = await this.#adsTxtCache.fetchAdsTxt(url);
-				} catch (e) {
-					error = e;
-				}
-				return {
-					url,
-					result,
-					error,
-				};
-			})();
-			promises.push(promise);
-		}
-		const results = await Promise.all(promises);
-		const failedUrls = [];
-		const failedButCachedUrls = [];
-		const successfulResults = [];
-		for (const result of results) {
-			if (result.result) {
-				successfulResults.push({
-					url: result.url,
-					content: result.result.content,
-				});
-				if (!result.result.fresh) {
-					failedButCachedUrls.push(result.url);
-				}
-			} else if (result.error) {
-				failedUrls.push(result.url);
-			}
-		}
-
-		let content = "";
-		if (failedUrls.length > 0) {
-			content += "# Error: The following urls failed and are not included:\n";
-			for (const url of failedUrls) {
-				content += `# - ${url}`;
-			}
-			content += "\n\n";
-		}
-
-		if (failedButCachedUrls.length > 0) {
-			content += "# Warning: The following urls failed, but were cached and are still included:\n";
-			for (const url of failedButCachedUrls) {
-				content += `# - ${url}`;
-			}
-			content += "\n\n";
-		}
-
-		for (const result of successfulResults) {
-			content += `\n# Fetched from ${result.url}\n`;
-			content += result.content;
-			content += "\n";
-		}
-		return content;
 	}
 }

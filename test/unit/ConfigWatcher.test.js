@@ -1,6 +1,7 @@
 import { stub } from "$std/testing/mock.ts";
 import { assertEquals, AssertionError } from "$std/testing/asserts.ts";
-import { ConfigWatcher, mockEnsureFile } from "../../src/ConfigWatcher.js";
+import { ConfigWatcher } from "../../src/ConfigWatcher.js";
+import { mockEnsureFile } from "../../src/AdsTxtUpdater.js";
 
 mockEnsureFile();
 
