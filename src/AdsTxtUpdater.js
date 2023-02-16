@@ -87,6 +87,7 @@ export class AdsTxtUpdater {
 				await ensureFile(this.#absoluteDestinationPath);
 				await Deno.writeTextFile(this.#absoluteDestinationPath, desiredContent);
 				this.#logger.info(`Updated ${this.#absoluteDestinationPath}`);
+				this.#reloadDestinationWatcher(true);
 			}
 		});
 
@@ -131,10 +132,14 @@ export class AdsTxtUpdater {
 		}
 	}
 
-	async #reloadDestinationWatcher() {
+	/**
+	 * @param {boolean} onlyWhenNotSet When true, only updates the watcher when no watcher exists yet.
+	 */
+	async #reloadDestinationWatcher(onlyWhenNotSet = false) {
 		if (!this.#absoluteDestinationPath) {
 			throw new Error("Assertion failed, no absoluteDestinationPath has been set");
 		}
+		if (onlyWhenNotSet && this.#destinationWatcher) return;
 		if (this.#destinationWatcher) {
 			this.#destinationWatcher.close();
 			this.#destinationWatcher = null;

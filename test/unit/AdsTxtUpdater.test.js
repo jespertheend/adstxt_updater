@@ -16,20 +16,20 @@ mockEnsureFile();
  * @param {Object} options
  * @param {(ctx: AdsTxtUpdaterTestContext) => Promise<void>} options.fn
  * @param {string} [options.destinationPath] The path to the ads.txt destination file
- * @param {string} [options.configContent]
+ * @param {string?} [options.configContent]
  * @param {Map<string, import("../../src/AdsTxtCache.js").FetchAdsTxtResult>} [options.fetchAdsTxtResults]
  */
 async function basicTest({
 	fn,
 	destinationPath = "/ads.txt",
-	configContent,
+	configContent = null,
 	fetchAdsTxtResults,
 }) {
 	const configPath = "/config.yml";
 	/** @type {string?} */
 	let currentDestinationContent = null;
 
-	if (configContent === undefined) {
+	if (configContent == null) {
 		configContent = `
 destination: ${destinationPath}
 sources:
@@ -51,7 +51,7 @@ sources:
 
 	const readTextFileSpy = stub(Deno, "readTextFile", async (path) => {
 		if (path == configPath) {
-			if (configContent !== undefined) {
+			if (configContent != null) {
 				return configContent;
 			}
 		} else if (path == destinationPath && currentDestinationContent != null) {
@@ -78,9 +78,9 @@ sources:
 	const watchFsSpy = stub(Deno, "watchFs", (path) => {
 		/** @type {Set<(e: Deno.FsEvent) => void>} */
 		let cbsSet;
-		if (path == configPath) {
+		if (path == configPath && configContent != null) {
 			cbsSet = configWatchEventCbs;
-		} else if (path == destinationPath) {
+		} else if (path == destinationPath && currentDestinationContent != null) {
 			cbsSet = destinationWatchEventCbs;
 		} else {
 			throw new Deno.errors.NotFound(`Path at ${path} does not exist`);
