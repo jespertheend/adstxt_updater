@@ -16,12 +16,14 @@ mockEnsureFile();
  * @param {Object} options
  * @param {(ctx: AdsTxtUpdaterTestContext) => Promise<void>} options.fn
  * @param {string} [options.destinationPath] The path to the ads.txt destination file
+ * @param {string} [options.destinationWatchPath] The path that the updater is expected to watch
  * @param {string?} [options.configContent]
  * @param {Map<string, import("../../src/AdsTxtCache.js").FetchAdsTxtResult>} [options.fetchAdsTxtResults]
  */
 async function basicTest({
 	fn,
 	destinationPath = "/ads.txt",
+	destinationWatchPath = "/",
 	configContent = null,
 	fetchAdsTxtResults,
 }) {
@@ -80,7 +82,7 @@ sources:
 		let cbsSet;
 		if (path == configPath && configContent != null) {
 			cbsSet = configWatchEventCbs;
-		} else if (path == destinationPath && currentDestinationContent != null) {
+		} else if (path == destinationWatchPath) {
 			cbsSet = destinationWatchEventCbs;
 		} else {
 			throw new Deno.errors.NotFound(`Path at ${path} does not exist`);
@@ -241,11 +243,13 @@ content2
 Deno.test({
 	name: "Rewrites the destination when it is changed from an external source",
 	async fn() {
+		const destinationPath = "/ads.txt";
 		await basicTest({
+			destinationPath,
 			async fn({ updater, udpateDestination, getCurrentDestinationContent }) {
 				udpateDestination("replaced content", {
 					kind: "modify",
-					paths: [],
+					paths: [destinationPath],
 				});
 
 				assertEquals(getCurrentDestinationContent(), "replaced content");

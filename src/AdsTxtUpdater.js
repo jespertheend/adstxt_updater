@@ -27,6 +27,8 @@ export class AdsTxtUpdater {
 	#loadedConfig;
 	/** @type {string?} */
 	#absoluteDestinationPath = null;
+	/** @type {string?} */
+	#absoluteWatchDestinationPath = null;
 	#loadConfigInstance;
 	#updateAdsTxtInstance;
 	/** @type {Deno.FsWatcher?} */
@@ -58,10 +60,20 @@ export class AdsTxtUpdater {
 				filename: this.#absoluteConfigPath,
 			});
 			this.#loadedConfig = /** @type {AdsTxtConfig} */ (parsed);
+
 			this.#absoluteDestinationPath = path.resolve(
 				path.dirname(this.#absoluteConfigPath),
 				this.#loadedConfig.destination,
 			);
+
+			// We watch the parent directory, rather than the destination file itself.
+			// This gives us two advantages:
+			// - The path is less likely to not exist, meaning we can start watching right away
+			// - This allows the user to delete the parent directory without losing the ads.txt
+			//   Since the ads.txt is in the root of a site, this essentially allows the user to
+			//   delete and reupload the entire site at once.
+			this.#absoluteWatchDestinationPath = path.dirname(this.#absoluteDestinationPath);
+
 			this.#logger.info(`Loaded configuration at ${this.#absoluteConfigPath}`);
 			this.#updateAdsTxtInstance.run();
 			this.#reloadDestinationWatcher();
@@ -136,7 +148,7 @@ export class AdsTxtUpdater {
 	 * @param {boolean} onlyWhenNotSet When true, only updates the watcher when no watcher exists yet.
 	 */
 	async #reloadDestinationWatcher(onlyWhenNotSet = false) {
-		if (!this.#absoluteDestinationPath) {
+		if (!this.#absoluteWatchDestinationPath || !this.#absoluteDestinationPath) {
 			throw new Error("Assertion failed, no absoluteDestinationPath has been set");
 		}
 		if (onlyWhenNotSet && this.#destinationWatcher) return;
@@ -145,7 +157,7 @@ export class AdsTxtUpdater {
 			this.#destinationWatcher = null;
 		}
 		try {
-			this.#destinationWatcher = Deno.watchFs(this.#absoluteDestinationPath);
+			this.#destinationWatcher = Deno.watchFs(this.#absoluteWatchDestinationPath);
 		} catch (e) {
 			if (e instanceof Deno.errors.NotFound) {
 				// We'll retry once we have added the file ourselves
@@ -155,7 +167,7 @@ export class AdsTxtUpdater {
 		}
 		if (this.#destinationWatcher) {
 			for await (const e of this.#destinationWatcher) {
-				if (e.kind != "access") {
+				if (e.kind != "access" && e.paths.includes(this.#absoluteDestinationPath)) {
 					this.#updateAdsTxtInstance.run();
 				}
 			}
