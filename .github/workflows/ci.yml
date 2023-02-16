@@ -28,11 +28,3 @@ jobs:
       - name: Run tests
         run: deno task test
 
-      - name: Build
-        run: deno task build --all
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v3.1.2
-        with:
-          name: build
-          path: dist/
