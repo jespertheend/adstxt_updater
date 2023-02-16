@@ -1,0 +1,25 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Name of tag and GitHub release title'
+        type: string
+        required: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v3.0.2
+        with:
+          name: build
+
+      - name: log build
+        run: |
+          ls
+          cd dist
+          ls
