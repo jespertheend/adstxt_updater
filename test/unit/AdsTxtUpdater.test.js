@@ -26,12 +26,14 @@ async function basicTest({
 	/** @type {string?} */
 	let currentDestinationContent = null;
 
+	// deno-lint-ignore require-await
 	const readTextFileSpy = stub(Deno, "readTextFile", async (path) => {
 		if (path == configPath) {
 			return configContent;
 		}
 		throw new Deno.errors.NotFound(`Path at ${path} does not exist`);
 	});
+	// deno-lint-ignore require-await
 	const writeTextFileSpy = stub(Deno, "writeTextFile", async (path, content) => {
 		if (path == destinationPath) {
 			if (typeof content != "string") {
@@ -44,13 +46,13 @@ async function basicTest({
 			);
 		}
 	});
-	const watchFsSpy = stub(Deno, "watchFs", (path) => {
+	const watchFsSpy = stub(Deno, "watchFs", () => {
 		const watcher = {
 			close() {},
 			[Symbol.asyncIterator]() {
 				return {
 					next() {
-						return new Promise((r) => {});
+						return new Promise(() => {});
 					},
 				};
 			},
@@ -59,12 +61,12 @@ async function basicTest({
 	});
 
 	const mockCache = /** @type {import("../../src/AdsTxtCache.js").AdsTxtCache} */ ({
-		async fetchAdsTxt(url, _durationSeconds) {
+		fetchAdsTxt(url, _durationSeconds) {
 			const result = fetchAdsTxtResults.get(url);
 			if (!result) {
 				throw new Error(`Failed to fetch "${url}" and no existing content was found in the cache.`);
 			}
-			return result;
+			return Promise.resolve(result);
 		},
 	});
 
