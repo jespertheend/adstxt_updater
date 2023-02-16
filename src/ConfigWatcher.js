@@ -29,7 +29,7 @@ export class ConfigWatcher {
 		this.#loadConfigInstance = new SingleInstancePromise(async () => {
 			if (this.#destructed) return;
 			const content = await Deno.readTextFile(this.#absoluteConfigPath);
-			const parsed = yaml.parse(content, {
+			let parsed = yaml.parse(content, {
 				filename: this.#absoluteConfigPath,
 			});
 
@@ -39,9 +39,14 @@ export class ConfigWatcher {
 			}
 			this.#updaters.clear();
 
-			const config = /** @type {import("./AdsTxtUpdater.js").AdsTxtConfig} */ (parsed);
-			const updater = new AdsTxtUpdater(this.#absoluteConfigPath, config, adsTxtCache);
-			this.#updaters.add(updater);
+			if (!Array.isArray(parsed)) {
+				parsed = [parsed];
+			}
+			const configs = /** @type {import("./AdsTxtUpdater.js").AdsTxtConfig[]} */ (parsed);
+			for (const config of configs) {
+				const updater = new AdsTxtUpdater(this.#absoluteConfigPath, config, adsTxtCache);
+				this.#updaters.add(updater);
+			}
 
 			logger.info(`Loaded configuration at ${this.#absoluteConfigPath}`);
 		});

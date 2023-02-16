@@ -1,4 +1,8 @@
-destination: ./path/to/ads2.txt
-sources:
-  - https://poki.com/ads.txt
-  - https://adinplay.com/ads.txt
+- destination: ./path/to/ads2.txt
+  sources:
+    - https://poki.com/ads.txt
+    - https://adinplay.com/ads.txt
+- destination: ./path/to/ads3.txt
+  sources:
+    - https://poki.com/ads.txt
+    - https://httpstat.us/404
