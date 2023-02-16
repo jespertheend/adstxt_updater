@@ -22,10 +22,10 @@ jobs:
           deno-version: v1.30.3
 
       - name: Build
-        run: deno task build --all
+        run: deno task build --all --compress
 
-      - name: List files
-        run: |
-          ls
-          cd dist
-          ls
+      - name: Release
+        uses: softprops/action-gh-release@v0.1.15
+        with:
+          files: |
+            dist/*
