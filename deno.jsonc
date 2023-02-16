@@ -30,6 +30,9 @@
 			"exclude": [
 				".denoTypes"
 			]
+		},
+		"rules": {
+			"exclude": ["require-await"]
 		}
 	},
 	"importMap": "importmap.json"

@@ -64,7 +64,7 @@ export class AdsTxtUpdater {
 			);
 			this.#logger.info(`Loaded configuration at ${this.#absoluteConfigPath}`);
 			this.#updateAdsTxtInstance.run();
-			// this.#reloadDestinationWatcher();
+			this.#reloadDestinationWatcher();
 		});
 		this.#loadConfigInstance.run();
 
@@ -74,10 +74,20 @@ export class AdsTxtUpdater {
 				throw new Error("Assertion failed, no absoluteDestinationPath has been set");
 			}
 			this.#logger.info(`Fetching required content for ${this.#absoluteDestinationPath}`);
-			const content = await this.#getAdsTxtsContent();
-			await ensureFile(this.#absoluteDestinationPath);
-			await Deno.writeTextFile(this.#absoluteDestinationPath, content);
-			this.#logger.info(`Updated ${this.#absoluteDestinationPath}`);
+			const desiredContent = await this.#getAdsTxtsContent();
+			let currentContent = null;
+			try {
+				currentContent = await Deno.readTextFile(this.#absoluteDestinationPath);
+			} catch (e) {
+				if (!(e instanceof Deno.errors.NotFound)) {
+					throw e;
+				}
+			}
+			if (currentContent != desiredContent) {
+				await ensureFile(this.#absoluteDestinationPath);
+				await Deno.writeTextFile(this.#absoluteDestinationPath, desiredContent);
+				this.#logger.info(`Updated ${this.#absoluteDestinationPath}`);
+			}
 		});
 
 		this.#watchConfig();
@@ -140,7 +150,9 @@ export class AdsTxtUpdater {
 		}
 		if (this.#destinationWatcher) {
 			for await (const e of this.#destinationWatcher) {
-				console.log(e);
+				if (e.kind != "access") {
+					this.#updateAdsTxtInstance.run();
+				}
 			}
 		}
 	}

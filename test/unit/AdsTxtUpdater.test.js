@@ -7,33 +7,58 @@ mockEnsureFile();
 /**
  * @typedef AdsTxtUpdaterTestContext
  * @property {AdsTxtUpdater} updater
+ * @property {string} configPath
  * @property {() => string?} getCurrentDestinationContent
+ * @property {(newContent: string, event: Deno.FsEvent) => void} udpateConfig
+ * @property {(newContent: string, event: Deno.FsEvent) => void} udpateDestination
  */
 /**
  * @param {Object} options
  * @param {(ctx: AdsTxtUpdaterTestContext) => Promise<void>} options.fn
- * @param {string} options.destinationPath The path to the ads.txt destination file
- * @param {string} options.configContent
+ * @param {string} [options.destinationPath] The path to the ads.txt destination file
+ * @param {string} [options.configContent]
  * @param {Map<string, import("../../src/AdsTxtCache.js").FetchAdsTxtResult>} [options.fetchAdsTxtResults]
  */
 async function basicTest({
 	fn,
-	destinationPath,
+	destinationPath = "/ads.txt",
 	configContent,
-	fetchAdsTxtResults = new Map(),
+	fetchAdsTxtResults,
 }) {
 	const configPath = "/config.yml";
 	/** @type {string?} */
 	let currentDestinationContent = null;
 
-	// deno-lint-ignore require-await
+	if (configContent === undefined) {
+		configContent = `
+destination: ${destinationPath}
+sources:
+  - https://example/ads1.txt
+`;
+	}
+
+	if (!fetchAdsTxtResults) {
+		fetchAdsTxtResults = new Map();
+		fetchAdsTxtResults.set("https://example/ads1.txt", {
+			content: "content1",
+			fresh: true,
+		});
+		fetchAdsTxtResults.set("https://example/ads2.txt", {
+			content: "content2",
+			fresh: true,
+		});
+	}
+
 	const readTextFileSpy = stub(Deno, "readTextFile", async (path) => {
 		if (path == configPath) {
-			return configContent;
+			if (configContent !== undefined) {
+				return configContent;
+			}
+		} else if (path == destinationPath && currentDestinationContent != null) {
+			return currentDestinationContent;
 		}
 		throw new Deno.errors.NotFound(`Path at ${path} does not exist`);
 	});
-	// deno-lint-ignore require-await
 	const writeTextFileSpy = stub(Deno, "writeTextFile", async (path, content) => {
 		if (path == destinationPath) {
 			if (typeof content != "string") {
@@ -46,13 +71,32 @@ async function basicTest({
 			);
 		}
 	});
-	const watchFsSpy = stub(Deno, "watchFs", () => {
+	/** @type {Set<(e: Deno.FsEvent) => void>} */
+	const configWatchEventCbs = new Set();
+	/** @type {Set<(e: Deno.FsEvent) => void>} */
+	const destinationWatchEventCbs = new Set();
+	const watchFsSpy = stub(Deno, "watchFs", (path) => {
+		/** @type {Set<(e: Deno.FsEvent) => void>} */
+		let cbsSet;
+		if (path == configPath) {
+			cbsSet = configWatchEventCbs;
+		} else if (path == destinationPath) {
+			cbsSet = destinationWatchEventCbs;
+		} else {
+			throw new Deno.errors.NotFound(`Path at ${path} does not exist`);
+		}
 		const watcher = {
 			close() {},
 			[Symbol.asyncIterator]() {
 				return {
-					next() {
-						return new Promise(() => {});
+					async next() {
+						const result = await new Promise((r) => {
+							cbsSet.add(r);
+						});
+						return {
+							value: result,
+							done: false,
+						};
 					},
 				};
 			},
@@ -60,9 +104,10 @@ async function basicTest({
 		return /** @type {Deno.FsWatcher} */ (watcher);
 	});
 
+	const fetchAdsTxtResultsCertain = fetchAdsTxtResults;
 	const mockCache = /** @type {import("../../src/AdsTxtCache.js").AdsTxtCache} */ ({
 		fetchAdsTxt(url, _durationSeconds) {
-			const result = fetchAdsTxtResults.get(url);
+			const result = fetchAdsTxtResultsCertain.get(url);
 			if (!result) {
 				throw new Error(`Failed to fetch "${url}" and no existing content was found in the cache.`);
 			}
@@ -72,10 +117,29 @@ async function basicTest({
 
 	try {
 		const updater = new AdsTxtUpdater(configPath, mockCache);
+
+		// Wait for config to load
+		await updater.waitForPromises();
+		// Wait for ads.txt to get written
+		await updater.waitForPromises();
+
 		await fn({
 			updater,
+			configPath,
 			getCurrentDestinationContent() {
 				return currentDestinationContent;
+			},
+			udpateConfig(newContent, event) {
+				configContent = newContent;
+				const cbs = [...configWatchEventCbs];
+				configWatchEventCbs.clear();
+				cbs.forEach((cb) => cb(event));
+			},
+			udpateDestination(newContent, event) {
+				currentDestinationContent = newContent;
+				const cbs = [...destinationWatchEventCbs];
+				destinationWatchEventCbs.clear();
+				cbs.forEach((cb) => cb(event));
 			},
 		});
 
@@ -112,11 +176,7 @@ sources:
 			fetchAdsTxtResults,
 			destinationPath,
 			configContent,
-			async fn({ updater, getCurrentDestinationContent }) {
-				// Wait for config to load
-				await updater.waitForPromises();
-				// Wait for ads.txt to get written
-				await updater.waitForPromises();
+			async fn({ getCurrentDestinationContent }) {
 				const content = getCurrentDestinationContent();
 				assertEquals(
 					content,
@@ -132,6 +192,77 @@ content1
 
 # Fetched from https://example/ads2.txt
 content2
+`,
+				);
+			},
+		});
+	},
+});
+
+Deno.test({
+	name: "Fetches again when the config changes",
+	async fn() {
+		const destinationPath = "/ads.txt";
+
+		await basicTest({
+			destinationPath,
+			async fn({ updater, configPath, getCurrentDestinationContent, udpateConfig }) {
+				udpateConfig(
+					`
+destination: ${destinationPath}
+sources:
+  - https://example/ads2.txt`,
+					{
+						kind: "modify",
+						paths: [configPath],
+					},
+				);
+
+				// Wait for config to load
+				await updater.waitForPromises();
+				// Wait for ads.txt to get written
+				await updater.waitForPromises();
+				// Wait a third time, not sure why
+				await updater.waitForPromises();
+
+				const content2 = getCurrentDestinationContent();
+				assertEquals(
+					content2,
+					`
+# Fetched from https://example/ads2.txt
+content2
+`,
+				);
+			},
+		});
+	},
+});
+
+Deno.test({
+	name: "Rewrites the destination when it is changed from an external source",
+	async fn() {
+		await basicTest({
+			async fn({ updater, udpateDestination, getCurrentDestinationContent }) {
+				udpateDestination("replaced content", {
+					kind: "modify",
+					paths: [],
+				});
+
+				assertEquals(getCurrentDestinationContent(), "replaced content");
+
+				// Wait for config to load
+				await updater.waitForPromises();
+				// Wait for ads.txt to get written
+				await updater.waitForPromises();
+				// Wait a third time, not sure why
+				await updater.waitForPromises();
+
+				const content2 = getCurrentDestinationContent();
+				assertEquals(
+					content2,
+					`
+# Fetched from https://example/ads1.txt
+content1
 `,
 				);
 			},
