@@ -12,10 +12,10 @@ jobs:
 
     steps:
       - name: Setup repo
-        uses: actions/checkout@3.3.0
+        uses: actions/checkout@v3.3.0
 
       - name: Setup Deno
-        uses: denoland/setup-deno@1.1.1
+        uses: denoland/setup-deno@v1.1.1
         with:
           deno-version: v1.30.3
 
