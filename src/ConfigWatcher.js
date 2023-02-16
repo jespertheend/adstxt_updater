@@ -20,7 +20,7 @@ export function mockEnsureFile() {
  * It watches the configuration file for changes and updates the ads.txt when needed.
  * It also watches the destination for changes and overwrites it when another application modifies it.
  */
-export class AdsTxtUpdater {
+export class ConfigWatcher {
 	#absoluteConfigPath;
 	#adsTxtCache;
 	/** @type {AdsTxtConfig?} */

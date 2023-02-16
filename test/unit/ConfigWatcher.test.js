@@ -1,12 +1,12 @@
 import { stub } from "$std/testing/mock.ts";
 import { assertEquals, AssertionError } from "$std/testing/asserts.ts";
-import { AdsTxtUpdater, mockEnsureFile } from "../../src/AdsTxtUpdater.js";
+import { ConfigWatcher, mockEnsureFile } from "../../src/ConfigWatcher.js";
 
 mockEnsureFile();
 
 /**
  * @typedef AdsTxtUpdaterTestContext
- * @property {AdsTxtUpdater} updater
+ * @property {ConfigWatcher} updater
  * @property {string} configPath
  * @property {() => string?} getCurrentDestinationContent
  * @property {(newContent: string, event: Deno.FsEvent) => void} udpateConfig
@@ -118,7 +118,7 @@ sources:
 	});
 
 	try {
-		const updater = new AdsTxtUpdater(configPath, mockCache);
+		const updater = new ConfigWatcher(configPath, mockCache);
 
 		// Wait for config to load
 		await updater.waitForPromises();

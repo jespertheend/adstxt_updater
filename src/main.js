@@ -1,6 +1,6 @@
 import * as path from "$std/path/mod.ts";
 import { AdsTxtCache } from "./AdsTxtCache.js";
-import { AdsTxtUpdater } from "./AdsTxtUpdater.js";
+import { ConfigWatcher } from "./ConfigWatcher.js";
 
 /**
  * @param {string[]} paths
@@ -8,11 +8,11 @@ import { AdsTxtUpdater } from "./AdsTxtUpdater.js";
 export function run(paths) {
 	const cache = new AdsTxtCache();
 
-	/** @type {AdsTxtUpdater[]} */
+	/** @type {ConfigWatcher[]} */
 	const configLoaders = [];
 	for (const arg of paths) {
 		const configPath = path.resolve(arg);
-		const loader = new AdsTxtUpdater(configPath, cache);
+		const loader = new ConfigWatcher(configPath, cache);
 		configLoaders.push(loader);
 	}
 }
