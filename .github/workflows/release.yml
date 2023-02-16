@@ -13,13 +13,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download artifact
-        uses: actions/download-artifact@v3.0.2
-        with:
-          name: build
+      - name: Setup repo
+        uses: actions/checkout@v3.3.0
 
-      - name: log build
-        run: |
-          ls
-          cd dist
-          ls
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1.1.1
+        with:
+          deno-version: v1.30.3
+
+      - name: Build
+        run: deno task build --all
+
