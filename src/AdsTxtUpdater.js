@@ -195,7 +195,7 @@ export class AdsTxtUpdater {
 			}
 		}
 
-		let content = "";
+		let content = `# This file was generated on ${new Date().toUTCString()}\n\n`;
 		if (failedUrls.length > 0) {
 			content += "# Error: The following urls failed and are not included:\n";
 			for (const url of failedUrls) {
@@ -213,9 +213,9 @@ export class AdsTxtUpdater {
 		}
 
 		for (const result of successfulResults) {
-			content += `\n# Fetched from ${result.url}\n`;
+			content += `# Fetched from ${result.url}\n`;
 			content += result.content;
-			content += "\n";
+			content += "\n\n";
 		}
 		return content;
 	}

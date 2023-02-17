@@ -121,3 +121,13 @@ export function stubFsCalls() {
 		},
 	};
 }
+
+export function mockDate() {
+	const mock = stub(Date.prototype, "toUTCString", () => "*current time*");
+
+	return {
+		restore() {
+			mock.restore();
+		},
+	};
+}

@@ -1,7 +1,7 @@
 import { FakeTime } from "$std/testing/time.ts";
 import { assertEquals } from "$std/testing/asserts.ts";
 import { AdsTxtUpdater, mockEnsureFile } from "../../src/AdsTxtUpdater.js";
-import { createMockAdsTxtCache, stubFsCalls } from "./shared.js";
+import { createMockAdsTxtCache, mockDate, stubFsCalls } from "./shared.js";
 
 mockEnsureFile();
 
@@ -23,6 +23,7 @@ async function basicTest({
 }) {
 	const { mockCache, fetchResults } = createMockAdsTxtCache();
 	const time = new FakeTime();
+	const mockedDate = mockDate();
 	const { fileContents, restore } = stubFsCalls();
 
 	try {
@@ -31,12 +32,15 @@ async function basicTest({
 		// Wait for ads.txt to get written
 		await updater.waitForPromises();
 
-		await fn({ updater, time, fetchResults, fileContents });
-
-		await updater.destructor();
+		try {
+			await fn({ updater, time, fetchResults, fileContents });
+		} finally {
+			await updater.destructor();
+		}
 	} finally {
 		restore();
 		time.restore();
+		mockedDate.restore();
 	}
 }
 
@@ -63,9 +67,11 @@ async function intervalTest(intervalStr, firstTickMs, secondTickMs) {
 
 			assertEquals(
 				fileContents.get("/ads.txt"),
-				`
+				`# This file was generated on *current time*
+
 # Fetched from https://example/ads1.txt
 content1
+
 `,
 			);
 
@@ -80,9 +86,11 @@ content1
 
 			assertEquals(
 				fileContents.get("/ads.txt"),
-				`
+				`# This file was generated on *current time*
+
 # Fetched from https://example/ads1.txt
 content2
+
 `,
 			);
 		},

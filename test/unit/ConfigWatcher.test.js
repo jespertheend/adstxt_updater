@@ -1,7 +1,7 @@
 import { assertEquals } from "$std/testing/asserts.ts";
 import { ConfigWatcher } from "../../src/ConfigWatcher.js";
 import { mockEnsureFile } from "../../src/AdsTxtUpdater.js";
-import { createMockAdsTxtCache, stubFsCalls } from "./shared.js";
+import { createMockAdsTxtCache, mockDate, stubFsCalls } from "./shared.js";
 
 mockEnsureFile();
 
@@ -36,6 +36,8 @@ sources:
 `;
 	}
 
+	const mockedDate = mockDate();
+
 	const { fileContents, externalUpdateFileContent, restore } = stubFsCalls();
 	fileContents.set(configPath, configContent);
 
@@ -49,22 +51,25 @@ sources:
 		// Wait for ads.txt to get written
 		await watcher.waitForPromises();
 
-		await fn({
-			watcher,
-			configPath,
-			getCurrentDestinationContent() {
-				return fileContents.get(destinationPath) || null;
-			},
-			udpateConfig(newContent, event) {
-				externalUpdateFileContent(configPath, newContent, event);
-			},
-			udpateDestination(newContent, event) {
-				externalUpdateFileContent(destinationPath, newContent, event);
-			},
-		});
-
-		await watcher.destructor();
+		try {
+			await fn({
+				watcher,
+				configPath,
+				getCurrentDestinationContent() {
+					return fileContents.get(destinationPath) || null;
+				},
+				udpateConfig(newContent, event) {
+					externalUpdateFileContent(configPath, newContent, event);
+				},
+				udpateDestination(newContent, event) {
+					externalUpdateFileContent(destinationPath, newContent, event);
+				},
+			});
+		} finally {
+			await watcher.destructor();
+		}
 	} finally {
+		mockedDate.restore();
 		restore();
 	}
 }
@@ -98,18 +103,20 @@ sources:
 				const content = getCurrentDestinationContent();
 				assertEquals(
 					content,
-					`# Error: The following urls failed and are not included:
+					`# This file was generated on *current time*
+
+# Error: The following urls failed and are not included:
 # - https://example/ads3.txt
 
 # Warning: The following urls failed, but were cached and are still included:
 # - https://example/ads2.txt
-
 
 # Fetched from https://example/ads1.txt
 content1
 
 # Fetched from https://example/ads2.txt
 content2
+
 `,
 				);
 			},
@@ -146,9 +153,11 @@ sources:
 				const content2 = getCurrentDestinationContent();
 				assertEquals(
 					content2,
-					`
+					`# This file was generated on *current time*
+
 # Fetched from https://example/ads2.txt
 content2
+
 `,
 				);
 			},
@@ -180,9 +189,11 @@ Deno.test({
 				const content2 = getCurrentDestinationContent();
 				assertEquals(
 					content2,
-					`
+					`# This file was generated on *current time*
+
 # Fetched from https://example/ads1.txt
 content1
+
 `,
 				);
 			},
