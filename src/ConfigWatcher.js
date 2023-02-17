@@ -66,6 +66,11 @@ export class ConfigWatcher {
 
 		await this.waitForPromises();
 
+		for (const updater of this.#updaters) {
+			await updater.destructor();
+		}
+		this.#updaters.clear();
+
 		this.#configWatcher?.close();
 	}
 

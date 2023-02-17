@@ -1,13 +1,13 @@
-import { stub } from "$std/testing/mock.ts";
-import { assertEquals, AssertionError } from "$std/testing/asserts.ts";
+import { assertEquals } from "$std/testing/asserts.ts";
 import { ConfigWatcher } from "../../src/ConfigWatcher.js";
 import { mockEnsureFile } from "../../src/AdsTxtUpdater.js";
+import { createMockAdsTxtCache, stubFsCalls } from "./shared.js";
 
 mockEnsureFile();
 
 /**
- * @typedef AdsTxtUpdaterTestContext
- * @property {ConfigWatcher} updater
+ * @typedef ConfigWatcherTestContext
+ * @property {ConfigWatcher} watcher
  * @property {string} configPath
  * @property {() => string?} getCurrentDestinationContent
  * @property {(newContent: string, event: Deno.FsEvent) => void} udpateConfig
@@ -15,22 +15,18 @@ mockEnsureFile();
  */
 /**
  * @param {Object} options
- * @param {(ctx: AdsTxtUpdaterTestContext) => Promise<void>} options.fn
+ * @param {(ctx: ConfigWatcherTestContext) => Promise<void>} options.fn
  * @param {string} [options.destinationPath] The path to the ads.txt destination file
- * @param {string} [options.destinationWatchPath] The path that the updater is expected to watch
  * @param {string?} [options.configContent]
  * @param {Map<string, import("../../src/AdsTxtCache.js").FetchAdsTxtResult>} [options.fetchAdsTxtResults]
  */
 async function basicTest({
 	fn,
 	destinationPath = "/ads.txt",
-	destinationWatchPath = "/",
 	configContent = null,
 	fetchAdsTxtResults,
 }) {
 	const configPath = "/config.yml";
-	/** @type {string?} */
-	let currentDestinationContent = null;
 
 	if (configContent == null) {
 		configContent = `
@@ -40,117 +36,36 @@ sources:
 `;
 	}
 
-	if (!fetchAdsTxtResults) {
-		fetchAdsTxtResults = new Map();
-		fetchAdsTxtResults.set("https://example/ads1.txt", {
-			content: "content1",
-			fresh: true,
-		});
-		fetchAdsTxtResults.set("https://example/ads2.txt", {
-			content: "content2",
-			fresh: true,
-		});
-	}
+	const { fileContents, externalUpdateFileContent, restore } = stubFsCalls();
+	fileContents.set(configPath, configContent);
 
-	const readTextFileSpy = stub(Deno, "readTextFile", async (path) => {
-		if (path == configPath) {
-			if (configContent != null) {
-				return configContent;
-			}
-		} else if (path == destinationPath && currentDestinationContent != null) {
-			return currentDestinationContent;
-		}
-		throw new Deno.errors.NotFound(`Path at ${path} does not exist`);
-	});
-	const writeTextFileSpy = stub(Deno, "writeTextFile", async (path, content) => {
-		if (path == destinationPath) {
-			if (typeof content != "string") {
-				throw new AssertionError("Writing a ReadableStream is not supported in this test");
-			}
-			currentDestinationContent = content;
-		} else {
-			throw new AssertionError(
-				`Text was written to an unexpected destination. Expected "${destinationPath}" but got "${path}"`,
-			);
-		}
-	});
-	/** @type {Set<(e: Deno.FsEvent) => void>} */
-	const configWatchEventCbs = new Set();
-	/** @type {Set<(e: Deno.FsEvent) => void>} */
-	const destinationWatchEventCbs = new Set();
-	const watchFsSpy = stub(Deno, "watchFs", (path) => {
-		/** @type {Set<(e: Deno.FsEvent) => void>} */
-		let cbsSet;
-		if (path == configPath && configContent != null) {
-			cbsSet = configWatchEventCbs;
-		} else if (path == destinationWatchPath) {
-			cbsSet = destinationWatchEventCbs;
-		} else {
-			throw new Deno.errors.NotFound(`Path at ${path} does not exist`);
-		}
-		const watcher = {
-			close() {},
-			[Symbol.asyncIterator]() {
-				return {
-					async next() {
-						const result = await new Promise((r) => {
-							cbsSet.add(r);
-						});
-						return {
-							value: result,
-							done: false,
-						};
-					},
-				};
-			},
-		};
-		return /** @type {Deno.FsWatcher} */ (watcher);
-	});
-
-	const fetchAdsTxtResultsCertain = fetchAdsTxtResults;
-	const mockCache = /** @type {import("../../src/AdsTxtCache.js").AdsTxtCache} */ ({
-		fetchAdsTxt(url, _durationSeconds) {
-			const result = fetchAdsTxtResultsCertain.get(url);
-			if (!result) {
-				throw new Error(`Failed to fetch "${url}" and no existing content was found in the cache.`);
-			}
-			return Promise.resolve(result);
-		},
-	});
+	const { mockCache } = createMockAdsTxtCache(fetchAdsTxtResults);
 
 	try {
-		const updater = new ConfigWatcher(configPath, mockCache);
+		const watcher = new ConfigWatcher(configPath, mockCache);
 
 		// Wait for config to load
-		await updater.waitForPromises();
+		await watcher.waitForPromises();
 		// Wait for ads.txt to get written
-		await updater.waitForPromises();
+		await watcher.waitForPromises();
 
 		await fn({
-			updater,
+			watcher,
 			configPath,
 			getCurrentDestinationContent() {
-				return currentDestinationContent;
+				return fileContents.get(destinationPath) || null;
 			},
 			udpateConfig(newContent, event) {
-				configContent = newContent;
-				const cbs = [...configWatchEventCbs];
-				configWatchEventCbs.clear();
-				cbs.forEach((cb) => cb(event));
+				externalUpdateFileContent(configPath, newContent, event);
 			},
 			udpateDestination(newContent, event) {
-				currentDestinationContent = newContent;
-				const cbs = [...destinationWatchEventCbs];
-				destinationWatchEventCbs.clear();
-				cbs.forEach((cb) => cb(event));
+				externalUpdateFileContent(destinationPath, newContent, event);
 			},
 		});
 
-		await updater.destructor();
+		await watcher.destructor();
 	} finally {
-		readTextFileSpy.restore();
-		writeTextFileSpy.restore();
-		watchFsSpy.restore();
+		restore();
 	}
 }
 
@@ -209,7 +124,7 @@ Deno.test({
 
 		await basicTest({
 			destinationPath,
-			async fn({ updater, configPath, getCurrentDestinationContent, udpateConfig }) {
+			async fn({ watcher, configPath, getCurrentDestinationContent, udpateConfig }) {
 				udpateConfig(
 					`
 destination: ${destinationPath}
@@ -222,11 +137,11 @@ sources:
 				);
 
 				// Wait for config to load
-				await updater.waitForPromises();
+				await watcher.waitForPromises();
 				// Wait for ads.txt to get written
-				await updater.waitForPromises();
+				await watcher.waitForPromises();
 				// Wait a third time, not sure why
-				await updater.waitForPromises();
+				await watcher.waitForPromises();
 
 				const content2 = getCurrentDestinationContent();
 				assertEquals(
@@ -247,7 +162,7 @@ Deno.test({
 		const destinationPath = "/ads.txt";
 		await basicTest({
 			destinationPath,
-			async fn({ updater, udpateDestination, getCurrentDestinationContent }) {
+			async fn({ watcher, udpateDestination, getCurrentDestinationContent }) {
 				udpateDestination("replaced content", {
 					kind: "modify",
 					paths: [destinationPath],
@@ -256,11 +171,11 @@ Deno.test({
 				assertEquals(getCurrentDestinationContent(), "replaced content");
 
 				// Wait for config to load
-				await updater.waitForPromises();
+				await watcher.waitForPromises();
 				// Wait for ads.txt to get written
-				await updater.waitForPromises();
+				await watcher.waitForPromises();
 				// Wait a third time, not sure why
-				await updater.waitForPromises();
+				await watcher.waitForPromises();
 
 				const content2 = getCurrentDestinationContent();
 				assertEquals(

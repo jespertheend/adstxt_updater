@@ -10,6 +10,7 @@ export function mockEnsureFile() {
 
 /**
  * @typedef AdsTxtConfig
+ * @property {string} [updateInterval]
  * @property {string} destination
  * @property {string[]} sources
  */
@@ -22,6 +23,7 @@ export class AdsTxtUpdater {
 	/** @type {Deno.FsWatcher?} */
 	#destinationWatcher = null;
 	#updateAdsTxtInstance;
+	#updateIntervalId = 0;
 	#destructed = false;
 
 	/**
@@ -71,6 +73,29 @@ export class AdsTxtUpdater {
 		});
 		this.#updateAdsTxtInstance.run();
 		this.#reloadDestinationWatcher();
+
+		let interval = 24 * 60 * 60 * 1000;
+		const intervalStr = config.updateInterval || "24h";
+		const match = intervalStr.match(/(?<amount>\d+)(?<unit>[smhd])/);
+		if (match && match.groups) {
+			let amount = parseInt(match.groups.amount, 10);
+			if (match.groups.unit == "s") {
+				amount *= 1000;
+			} else if (match.groups.unit == "m") {
+				amount *= 60 * 1000;
+			} else if (match.groups.unit == "h") {
+				amount *= 60 * 60 * 1000;
+			} else if (match.groups.unit == "d") {
+				amount *= 24 * 60 * 60 * 1000;
+			}
+			if (isFinite(amount)) {
+				interval = amount;
+			}
+		}
+
+		this.#updateIntervalId = setInterval(() => {
+			this.#updateAdsTxtInstance.run();
+		}, interval);
 	}
 
 	async destructor() {
@@ -82,6 +107,7 @@ export class AdsTxtUpdater {
 		await this.waitForPromises();
 
 		this.#destinationWatcher?.close();
+		clearInterval(this.#updateIntervalId);
 	}
 
 	/**
