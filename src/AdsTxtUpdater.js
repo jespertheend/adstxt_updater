@@ -2,6 +2,7 @@ import * as path from "$std/path/mod.ts";
 import * as fs from "$std/fs/mod.ts";
 import { SingleInstancePromise } from "./SingleInstancePromise.js";
 import { logger } from "./logger.js";
+import { transformAdsTxt } from "./transformAdsTxt.js";
 
 let ensureFile = fs.ensureFile;
 export function mockEnsureFile() {
@@ -9,10 +10,16 @@ export function mockEnsureFile() {
 }
 
 /**
+ * @typedef AdsTxtSourceConfig
+ * @property {string} source
+ * @property {import("./transformAdsTxt.js").TransformAdsTxtOptions} [transform]
+ */
+
+/**
  * @typedef AdsTxtConfig
  * @property {string} [updateInterval]
  * @property {string} destination
- * @property {string[]} sources
+ * @property {(AdsTxtSourceConfig | string)[]} sources
  */
 
 export class AdsTxtUpdater {
@@ -160,17 +167,29 @@ export class AdsTxtUpdater {
 		}
 
 		const promises = [];
-		for (const url of this.#config.sources) {
+		for (const sourceConfig of this.#config.sources) {
+			/** @type {AdsTxtSourceConfig} */
+			let config;
+			if (typeof sourceConfig != "string") {
+				config = sourceConfig;
+			} else {
+				config = {
+					source: sourceConfig,
+				};
+			}
 			const promise = (async () => {
 				let result;
 				let error;
 				try {
-					result = await this.#adsTxtCache.fetchAdsTxt(url);
+					result = await this.#adsTxtCache.fetchAdsTxt(config.source);
 				} catch (e) {
 					error = e;
 				}
+				if (result && config.transform) {
+					result.content = transformAdsTxt(result.content, config.transform);
+				}
 				return {
-					url,
+					url: config.source,
 					result,
 					error,
 				};

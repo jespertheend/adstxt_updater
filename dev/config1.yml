@@ -1,4 +1,7 @@
 destination: ./ads1.txt
 sources:
+  - source: https://www.crazygames.com/ads.txt
+    transform:
+      strip_variables: true
   - https://poki.com/ads.all.txt
   - https://httpstat.us/404

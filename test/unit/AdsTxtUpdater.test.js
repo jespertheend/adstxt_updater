@@ -16,12 +16,14 @@ mockEnsureFile();
  * @param {Object} options
  * @param {import("../../src/AdsTxtUpdater.js").AdsTxtConfig} options.config
  * @param {(ctx: AdsTxtUpdaterTestContext) => void | Promise<void>} options.fn
+ * @param {Map<string, import("../../src/AdsTxtCache.js").FetchAdsTxtResult>} [options.fetchAdsTxtResults]
  */
 async function basicTest({
 	config,
+	fetchAdsTxtResults,
 	fn,
 }) {
-	const { mockCache, fetchResults } = createMockAdsTxtCache();
+	const { mockCache, fetchResults } = createMockAdsTxtCache(fetchAdsTxtResults);
 	const time = new FakeTime();
 	const mockedDate = mockDate();
 	const { fileContents, restore } = stubFsCalls();
@@ -45,17 +47,21 @@ async function basicTest({
 }
 
 /**
- * @param {string} intervalStr
+ * @param {string?} intervalStr
  * @param {number} firstTickMs
  * @param {number} secondTickMs
  */
 async function intervalTest(intervalStr, firstTickMs, secondTickMs) {
+	/** @type {import("../../src/AdsTxtUpdater.js").AdsTxtConfig} */
+	const config = {
+		destination: "/ads.txt",
+		sources: ["https://example/ads1.txt"],
+	};
+	if (intervalStr != null) {
+		config.updateInterval = intervalStr;
+	}
 	await basicTest({
-		config: {
-			updateInterval: intervalStr,
-			destination: "/ads.txt",
-			sources: ["https://example/ads1.txt"],
-		},
+		config,
 		async fn({ updater, fileContents, time, fetchResults }) {
 			fetchResults.set("https://example/ads1.txt", {
 				content: "content2",
@@ -107,5 +113,56 @@ Deno.test({
 		await intervalTest("2h", twoHours - 5_000, twoHours + 5_000);
 		const twoDays = 1000 * 60 * 60 * 24 * 2;
 		await intervalTest("2d", twoDays - 5_000, twoDays + 5_000);
+
+		// Defaults to one day when not set
+		const oneDay = 1000 * 60 * 60 * 24;
+		await intervalTest(null, oneDay - 5_000, oneDay + 5_000);
+		await intervalTest("", oneDay - 5_000, oneDay + 5_000);
+	},
+});
+
+Deno.test({
+	name: "Transforms results",
+	async fn() {
+		/** @type {Map<string, import("../../src/AdsTxtCache.js").FetchAdsTxtResult>} */
+		const fetchAdsTxtResults = new Map();
+		fetchAdsTxtResults.set("https://example/ads1.txt", {
+			fresh: true,
+			content: `
+# comment
+VARIABLE=removed
+OTHER_VARIABLE=not removed
+domain.com, 1234, RESELLER, 123456789abcdef1
+`,
+		});
+		await basicTest({
+			config: {
+				destination: "/ads.txt",
+				sources: [
+					{
+						source: "https://example/ads1.txt",
+						transform: {
+							strip_variables: ["VARIABLE"],
+						},
+					},
+				],
+			},
+			fetchAdsTxtResults,
+			fn({ fileContents }) {
+				assertEquals(
+					fileContents.get("/ads.txt"),
+					`# This file was generated on *current time*
+
+# Fetched from https://example/ads1.txt
+
+# comment
+OTHER_VARIABLE=not removed
+domain.com, 1234, RESELLER, 123456789abcdef1
+
+
+`,
+				);
+			},
+		});
 	},
 });
