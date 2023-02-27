@@ -89,3 +89,33 @@ Make sure you have placed the adstxt_updater binary in `/usr/bin` (which is a co
 and the configuration file at `/etc/adstxt_updater.yml` (which is a common location for configuration files).
 
 You can then start the service with `service adstxt_updater start` and monitor its logs using `journalctl -fu adstxt_updater`.
+
+## Updating your site without overwriting ads.txt
+
+adstxt_updater monitors any destination ads.txt files for changes. If a file is changed or deleted it automatically overwrites it with the correct content.
+So if you have a workflow where you upload your entire website via sftp for example, you don't need to worry if the ads.txt gets overwritten or removed.
+
+However, extra care needs to be taken if you have a workflow where you upload your site to a separate 'staging' directory and then copy that directory to the production environment all at once, something like this:
+
+```bash
+ssh user@example.com <<'ENDSSH'
+cd /var/www/
+rm -r staging/
+ENDSSH
+
+sftp user@example.com <<**
+cd /var/www/
+put -r staging/
+bye
+**
+
+ssh user@example.com <<'ENDSSH'
+cd /var/www/
+rm -r production/
+rsync -a staging/ production/
+**
+```
+
+Generally speaking this is a more robust workflow. In case your upload fails half way, your users won't be left with half an upload on the website.
+
+But it's important to note that in your last step you won't be able to use `cp -r` to copy your staging folder to the production folder. Normally this would work because you just deleted the production folder using `rm -r production`. But in our case, adstxt_updater noticed that the ads.txt got deleted and quickly added it back, including the `production` folder. The `cp` command doesn't work well with this, and will mess up your folder structure. `rsync -a` on the other hand correctly merges the production folder with the already existing one.
