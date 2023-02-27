@@ -147,8 +147,17 @@ export class AdsTxtUpdater {
 		}
 		if (this.#destinationWatcher) {
 			for await (const e of this.#destinationWatcher) {
-				if (e.kind != "access" && e.paths.includes(this.#absoluteDestinationPath)) {
-					this.#updateAdsTxtInstance.run();
+				if (e.kind != "access") {
+					let needsUpdate = false;
+					for (const path of e.paths) {
+						if (this.#absoluteWatchDestinationPath == path || this.#absoluteDestinationPath == path) {
+							needsUpdate = true;
+							break;
+						}
+					}
+					if (needsUpdate) {
+						this.#updateAdsTxtInstance.run();
+					}
 				}
 			}
 		}

@@ -101,11 +101,15 @@ export function stubFsCalls() {
 		fileContents,
 		/**
 		 * @param {string} path
-		 * @param {string} content
+		 * @param {string?} content
 		 * @param {Deno.FsEvent} event
 		 */
 		externalUpdateFileContent(path, content, event) {
-			fileContents.set(path, content);
+			if (content == null) {
+				fileContents.delete(path);
+			} else {
+				fileContents.set(path, content);
+			}
 			for (const [cbsPath, cbs] of watchEventCbs) {
 				if (path.startsWith(cbsPath)) {
 					const cbsArr = [...cbs];

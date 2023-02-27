@@ -11,6 +11,7 @@ mockEnsureFile();
  * @property {FakeTime} time
  * @property {Map<string, import("../../src/AdsTxtCache.js").FetchAdsTxtResult>} fetchResults
  * @property {Map<string, string>} fileContents
+ * @property {(path: string, content: string?, event: Deno.FsEvent) => void} externalUpdateFileContent
  */
 /**
  * @param {Object} options
@@ -26,7 +27,7 @@ async function basicTest({
 	const { mockCache, fetchResults } = createMockAdsTxtCache(fetchAdsTxtResults);
 	const time = new FakeTime();
 	const mockedDate = mockDate();
-	const { fileContents, restore } = stubFsCalls();
+	const { fileContents, externalUpdateFileContent, restore } = stubFsCalls();
 
 	try {
 		const updater = new AdsTxtUpdater("/path/to/config.yml", config, mockCache);
@@ -35,7 +36,7 @@ async function basicTest({
 		await updater.waitForPromises();
 
 		try {
-			await fn({ updater, time, fetchResults, fileContents });
+			await fn({ updater, time, fetchResults, fileContents, externalUpdateFileContent });
 		} finally {
 			await updater.destructor();
 		}
@@ -162,6 +163,82 @@ domain.com, 1234, RESELLER, 123456789abcdef1
 
 `,
 				);
+			},
+		});
+	},
+});
+
+Deno.test({
+	name: "Rewrites destination when it is changed",
+	async fn() {
+		await basicTest({
+			config: {
+				destination: "/path/to/ads.txt",
+				sources: ["https://example/ads1.txt"],
+			},
+			async fn({ updater, fileContents, externalUpdateFileContent }) {
+				function assertAdsTxtContent() {
+					assertEquals(
+						fileContents.get("/path/to/ads.txt"),
+						`# This file was generated on *current time*
+
+# Fetched from https://example/ads1.txt
+content1
+
+`,
+					);
+				}
+				assertAdsTxtContent();
+
+				externalUpdateFileContent("/path/to/ads.txt", "rewritten", {
+					kind: "modify",
+					paths: ["/path/to/ads.txt"],
+				});
+
+				// Wait for fetch and write, not sure why we need to wait a third time.
+				await updater.waitForPromises();
+				await updater.waitForPromises();
+				await updater.waitForPromises();
+
+				assertAdsTxtContent();
+			},
+		});
+	},
+});
+
+Deno.test({
+	name: "Rewrites destination when the parent is deleted",
+	async fn() {
+		await basicTest({
+			config: {
+				destination: "/path/to/ads.txt",
+				sources: ["https://example/ads1.txt"],
+			},
+			async fn({ updater, fileContents, externalUpdateFileContent }) {
+				function assertAdsTxtContent() {
+					assertEquals(
+						fileContents.get("/path/to/ads.txt"),
+						`# This file was generated on *current time*
+
+# Fetched from https://example/ads1.txt
+content1
+
+`,
+					);
+				}
+				assertAdsTxtContent();
+
+				externalUpdateFileContent("/path/to/ads.txt", null, {
+					kind: "remove",
+					paths: ["/path/to"],
+				});
+
+				// Wait for fetch and write, not sure why we need to wait a third time.
+				await updater.waitForPromises();
+				await updater.waitForPromises();
+				await updater.waitForPromises();
+
+				assertAdsTxtContent();
 			},
 		});
 	},
