@@ -70,7 +70,7 @@ export class AdsTxtUpdater {
 					if (lastEventTimeAgo > COOLDOWN_MS) {
 						break;
 					} else {
-						await new Promise((resolve) => setInterval(resolve, COOLDOWN_MS - lastEventTimeAgo));
+						await new Promise((resolve) => setTimeout(resolve, COOLDOWN_MS - lastEventTimeAgo));
 					}
 				}
 			}
@@ -84,9 +84,18 @@ export class AdsTxtUpdater {
 					throw e;
 				}
 			}
+
+			// Remove the first two lines, which includes the date. Otherwise the file will keep updating forever.
+			if (currentContent) {
+				const lines = currentContent.split("\n");
+				lines.splice(0, 2);
+				currentContent = lines.join("\n");
+			}
+
 			if (currentContent != desiredContent) {
 				await ensureFile(this.#absoluteDestinationPath);
-				await Deno.writeTextFile(this.#absoluteDestinationPath, desiredContent);
+				const contentWithDate = `# This file was generated on ${new Date().toUTCString()}\n\n${desiredContent}`;
+				await Deno.writeTextFile(this.#absoluteDestinationPath, contentWithDate);
 				logger.info(`Updated ${this.#absoluteDestinationPath}`);
 				this.#reloadWatchers();
 			} else {
@@ -266,7 +275,7 @@ export class AdsTxtUpdater {
 			}
 		}
 
-		let content = `# This file was generated on ${new Date().toUTCString()}\n\n`;
+		let content = "";
 		if (failedUrls.length > 0) {
 			content += "# Error: The following urls failed and are not included:\n";
 			for (const url of failedUrls) {
