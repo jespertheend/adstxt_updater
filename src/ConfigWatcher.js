@@ -4,9 +4,9 @@ import { AdsTxtUpdater } from "./AdsTxtUpdater.js";
 import { logger } from "./logger.js";
 
 /**
- * An AdsTxtUpdater is responsible for updating exactly one ads.txt using exactly one configuration file.
+ * A ConfigWatcher is responsible for updating the ads.txt files configured in exactly one configuration file.
  * It watches the configuration file for changes and updates the ads.txt when needed.
- * It also watches the destination for changes and overwrites it when another application modifies it.
+ * AdsTxtUpdaters are created for every destination path in the config file.
  */
 export class ConfigWatcher {
 	#absoluteConfigPath;

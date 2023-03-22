@@ -22,6 +22,11 @@ export function mockEnsureFile() {
  * @property {(AdsTxtSourceConfig | string)[]} sources
  */
 
+/**
+ * An AdsTxtUpdater is responsible for updating exactly one ads.txt.
+ * It fetches and updates the ads.txt once a day.
+ * And it watches the destination for changes and overwrites it when another application modifies it.
+ */
 export class AdsTxtUpdater {
 	#absoluteDestinationPath;
 	#config;
