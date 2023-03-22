@@ -31,9 +31,8 @@ export class AdsTxtUpdater {
 	#absoluteDestinationPath;
 	#config;
 	#adsTxtCache;
-	#absoluteWatchDestinationPath;
-	/** @type {Deno.FsWatcher?} */
-	#destinationWatcher = null;
+	/** @type {Set<Deno.FsWatcher>} */
+	#watchers = new Set();
 	#updateAdsTxtInstance;
 	#updateIntervalId = 0;
 	#destructed = false;
@@ -52,14 +51,6 @@ export class AdsTxtUpdater {
 		this.#absoluteDestinationPath = absoluteDestinationPath;
 		this.#config = config;
 		this.#adsTxtCache = adsTxtCache;
-
-		// We watch the parent directory, rather than the destination file itself.
-		// This gives us two advantages:
-		// - The path is less likely to not exist, meaning we can start watching right away
-		// - This allows the user to delete the parent directory without losing the ads.txt
-		//   Since the ads.txt is in the root of a site, this essentially allows the user to
-		//   delete and reupload the entire site at once.
-		this.#absoluteWatchDestinationPath = path.dirname(absoluteDestinationPath);
 
 		this.#updateAdsTxtInstance = new SingleInstancePromise(async () => {
 			if (this.#destructed) return;
@@ -80,11 +71,11 @@ export class AdsTxtUpdater {
 				await ensureFile(this.#absoluteDestinationPath);
 				await Deno.writeTextFile(this.#absoluteDestinationPath, desiredContent);
 				logger.info(`Updated ${this.#absoluteDestinationPath}`);
-				this.#reloadDestinationWatcher();
+				this.#reloadWatchers();
 			}
 		});
 		this.#updateAdsTxtInstance.run();
-		this.#reloadDestinationWatcher();
+		this.#reloadWatchers();
 
 		let interval = 24 * 60 * 60 * 1000;
 		const intervalStr = config.updateInterval || "24h";
@@ -118,7 +109,7 @@ export class AdsTxtUpdater {
 
 		await this.waitForPromises();
 
-		this.#destinationWatcher?.close();
+		this.#closeWatchers();
 		clearInterval(this.#updateIntervalId);
 	}
 
@@ -129,38 +120,69 @@ export class AdsTxtUpdater {
 		return this.#updateAdsTxtInstance.waitForFinishIfRunning();
 	}
 
-	async #reloadDestinationWatcher() {
-		if (!this.#absoluteWatchDestinationPath || !this.#absoluteDestinationPath) {
+	#closeWatchers() {
+		for (const watcher of this.#watchers) {
+			watcher.close();
+		}
+		this.#watchers.clear();
+	}
+
+	async #reloadWatchers() {
+		if (!this.#absoluteDestinationPath) {
 			throw new Error("Assertion failed, no absoluteDestinationPath has been set");
 		}
-		if (this.#destinationWatcher) {
-			this.#destinationWatcher.close();
-			this.#destinationWatcher = null;
+		// There's an issue that causes events to not get reported when a lot of events happen at once:
+		// https://github.com/denoland/deno/issues/11373
+		// Which might be very common if the user is deleting and reuploading the entire site.
+		// So instead of watching the full directory, we only watch the destination file itself.
+		// We also watch all parent directories (non recursively), in case the file or one of its
+		// parents doesn't exist yet.
+
+		/** @type {Set<string>} */
+		const paths = new Set();
+		let lastPath = this.#absoluteDestinationPath;
+		paths.add(lastPath);
+		while (true) {
+			lastPath = path.resolve(lastPath, "..");
+			if (paths.has(lastPath)) break;
+			paths.add(lastPath);
 		}
+
+		this.#closeWatchers();
+		for (const path of paths) {
+			this.#createWatcher(path);
+		}
+	}
+
+	/**
+	 * @param {string} path
+	 */
+	async #createWatcher(path) {
+		let watcher;
 		try {
-			this.#destinationWatcher = Deno.watchFs(this.#absoluteWatchDestinationPath);
+			watcher = Deno.watchFs(path, {
+				recursive: false,
+			});
+			this.#watchers.add(watcher);
 		} catch (e) {
 			if (e instanceof Deno.errors.NotFound) {
 				// We'll retry once we have added the file ourselves
+				return;
 			} else {
 				throw e;
 			}
 		}
-		if (this.#destinationWatcher) {
-			for await (const e of this.#destinationWatcher) {
-				if (e.kind != "access") {
-					let needsUpdate = false;
-					for (const path of e.paths) {
-						if (this.#absoluteWatchDestinationPath == path || this.#absoluteDestinationPath == path) {
-							needsUpdate = true;
-							break;
-						}
-					}
-					if (needsUpdate) {
-						this.#updateAdsTxtInstance.run();
-					}
-				}
-			}
+
+		for await (const e of watcher) {
+			if (e.kind == "access") continue;
+
+			// I'm not sure why, but for some reason the `paths` property is frequently a different
+			// path from the one we have set the watcher to, even though the watcher was created with `recursive`
+			// https://github.com/denoland/deno/issues/18348
+			// To work around this we check if the reported path is the same as the one we provided to the watcher.
+			if (!e.paths.includes(path)) continue;
+
+			this.#updateAdsTxtInstance.run();
 		}
 	}
 
