@@ -36,6 +36,7 @@ export class AdsTxtUpdater {
 	#updateAdsTxtInstance;
 	#updateIntervalId = 0;
 	#destructed = false;
+	#lastWatchEventTime = -1;
 
 	/**
 	 * @param {string} absoluteConfigPath
@@ -57,6 +58,22 @@ export class AdsTxtUpdater {
 			if (!this.#absoluteDestinationPath) {
 				throw new Error("Assertion failed, no absoluteDestinationPath has been set");
 			}
+			if (this.#lastWatchEventTime >= 0) {
+				// When a folder is being deleted recursively, we don't want to get in the way and immediately
+				// Create the ads.txt again. So we'll wait a few seconds, hopefully that handles most cases.
+				logger.info(
+					`The ads.txt at "${this.#absoluteDestinationPath}" has changed, waiting for disk operations to finish.`,
+				);
+				const COOLDOWN_MS = 1000;
+				while (true) {
+					const lastEventTimeAgo = performance.now() - this.#lastWatchEventTime;
+					if (lastEventTimeAgo > COOLDOWN_MS) {
+						break;
+					} else {
+						await new Promise((resolve) => setInterval(resolve, COOLDOWN_MS - lastEventTimeAgo));
+					}
+				}
+			}
 			logger.info(`Fetching required content for ${this.#absoluteDestinationPath}`);
 			const desiredContent = await this.#getAdsTxtsContent();
 			let currentContent = null;
@@ -72,6 +89,8 @@ export class AdsTxtUpdater {
 				await Deno.writeTextFile(this.#absoluteDestinationPath, desiredContent);
 				logger.info(`Updated ${this.#absoluteDestinationPath}`);
 				this.#reloadWatchers();
+			} else {
+				logger.info(`No changes are needed for ${this.#absoluteDestinationPath}`);
 			}
 		});
 		this.#updateAdsTxtInstance.run();
@@ -182,6 +201,7 @@ export class AdsTxtUpdater {
 			// To work around this we check if the reported path is the same as the one we provided to the watcher.
 			if (!e.paths.includes(path)) continue;
 
+			this.#lastWatchEventTime = performance.now();
 			this.#updateAdsTxtInstance.run();
 		}
 	}
