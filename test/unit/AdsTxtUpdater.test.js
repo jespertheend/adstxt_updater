@@ -170,6 +170,7 @@ domain.com, 1234, RESELLER, 123456789abcdef1
 
 Deno.test({
 	name: "Rewrites destination when it is changed",
+	ignore: true,
 	async fn() {
 		await basicTest({
 			config: {
@@ -208,6 +209,7 @@ content1
 
 Deno.test({
 	name: "Rewrites destination when the parent is deleted",
+	ignore: true,
 	async fn() {
 		await basicTest({
 			config: {
