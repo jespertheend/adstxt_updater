@@ -83,12 +83,21 @@ After=network.target
 [Service]
 ExecStart=/usr/bin/adstxt_updater /etc/adstxt_updater.yml
 Type=simple
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
 ```
 
 Make sure you have placed the adstxt_updater binary in `/usr/bin` (which is a common location for binaries),
 and the configuration file at `/etc/adstxt_updater.yml` (which is a common location for configuration files).
 
-You can then start the service with `service adstxt_updater start` and monitor its logs using `journalctl -fu adstxt_updater`.
+You can then start the service with `systemctl start adstxt_updater.service` and monitor its logs using `journalctl -fu adstxt_updater`.
+
+The `[Install]` section in the service file makes it possible to start the service whenever your system (re)starts.
+Simply run `systemctl enable adstxt_updater.service` to enable the service.
+
+You can run `systemctl status adstxt_updater.service` to verify whether the service is currently running.
 
 ## Updating your site without overwriting ads.txt
 
